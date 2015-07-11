@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta charset="UTF-8">
+<title>forge form</title>
+<!-- Bootstrap -->
+<link href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.2/css/bootstrap.min.css" rel="stylesheet">
+<!-- Le HTML5 shim, for IE6-8 support of HTML5 elements -->
+<!--[if lt IE 9]>
+<script src="http://html5shim.googlecode.com/svn/trunk/html5.js"></script>
+<![endif]-->
+<style>
+  input[type=file].target-input {
+    width: 60%;
+    display: inline;
+  }
+  .nomal-input {
+    width: 75%;
+  }
+  .add-input {
+    width: 25%;
+  }
+  .label-add-param {
+    margin-right: 5px;
+  }
+
+  .label {
+    font-size: 100%;
+    line-height: 2;
+  }
+
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>forge form</h1>
+  <div class="well">
+    <div class="row">
+      <div class="col-sm-12">
+        <form target="new" role="form" id="target-form" action="" method="post" enctype="multipart/form-data">
+          <div id="main">
+            <div class="form-group">
+              <label for="action-url">
+                <span class="label label-success">action-url</span>
+              </label>
+              <input class="form-control nomal-input" value="" type="text" id="action-url" placeholder="http://hoge.test/insert/">
+            </div>
+            <div class="form-group">
+              <label>
+                <span class="label label-success">method-type</span>
+              </label>
+              <div class="form-group">
+                <label class="radio-inline">
+                  <input type="radio" name="method-type" value="post" checked="checked"> post
+                </label>
+                <label class="radio-inline">
+                  <input type="radio" name="method-type" value="get"> get
+                </label>
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="interval">
+                <span class="label label-success">interval</span>
+              </label>
+              <input class="form-control nomal-input" type="text" value="1" id="interval">
+            </div>
+            <div class="form-group">
+              <label for="exec-cnt">
+                <span class="label label-success">exec-cnt</span>
+              </label>
+              <input class="form-control nomal-input" type="text" value="1" id="exec-cnt">
+            </div>
+            <div id="add-input-area"></div>
+            <div id="hidden-area"></div>
+            <div class="form-group" id="exec-add-input-file">
+              <label for="add-input-file">
+                <span class="label label-warning">add input?</span>
+              </label>
+              <div>
+                <span class="label-add-param">name:</span><input id="add-input-name" class="add-input" type="text" value="" placeholder="hoge">
+                <button id="add-input" class="btn btn-small btn-warning" type="button">add</button>
+              </div>
+            </div>
+            <div class="form-group" id="exec-add-hidden">
+              <label for="add-hidden-name">
+                <span class="label label-warning">add hidden?</span>
+              </label>
+              <div>
+                <span class="label-add-param">name:</span><input id="add-hidden-name" class="add-input" type="text" value="" placeholder="hoge">
+                <span class="label-add-param">value:</span><input id="add-hidden-value" class="add-input" type="text" value="" placeholder="piyo">
+                <button id="add-hidden" class="btn btn-small btn-warning" type="button">add</button>
+              </div>
+            </div>
+            <div class="form-group">
+              <button id="exec" class="btn btn-danger" type="button">exec</button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+<script id="input-tmpl" type="text/html">
+  <label for="input">
+    <span class="label label-success">input</span>
+  </label>
+  <div>
+    <input type="file" name="<%- name %>" class="target-input">
+    <button class="btn btn-mini btn-danger del-input" type="button">Delete Input</button>
+  </div>
+</script>
+<script id="hidden-tmpl" type="text/html">
+  <label for="hidden">
+    <span class="label label-success">hidden</span>
+  </label>
+  <div>
+    <span class="label-add-param">name:</span><input class="add-input" type="text" value="<%- name %>" disabled="disabled">
+    <span class="label-add-param">value:</span><input class="add-input" type="text" value="<%- val %>" class="hidden-val">
+    <button class="btn btn-mini btn-danger del-hidden" type="button">Delete Hidden</button>
+    <input type="hidden" name="<%- name %>" value="<%- val %>" class="target-hidden">
+  </div>
+</script>
+<script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.3/jquery.min.js"></script>
+<script type="text/javascript" src="http://cdnjs.cloudflare.com/ajax/libs/underscore.js/1.8.3/underscore-min.js"></script>
+<script type="text/javascript" src="http://cdnjs.cloudflare.com/ajax/libs/backbone.js/1.2.1/backbone-min.js"></script>
+<script>
+// namespace
+window.FF = {
+  View: {},
+  Model: {},
+  Collection: {},
+  Config: {
+    MAX_EXEC_CNT: 100
+  }
+};
+
+// main
+jQuery(function($){
+  var collection = new FF.Collection.MHiddens();
+  var inputCollection = new FF.Collection.Inputs();
+  new FF.View.MainView({
+    collection: collection,
+    inputCollection: inputCollection
+  });
+});
+
+(function(){
+  FF.View.MainView = Backbone.View.extend({
+    el: '#main',
+    addHiddenArea: $('#hidden-area'),
+    addInputArea: $('#add-input-area'),
+    inputCollection: null,
+    execCnt: 0,
+    initialize: function(args){
+      this.inputCollection = args.inputCollection;
+
+      this.inputCollection.on('add', this.inputRender, this);
+      this.collection.on('add', this.hiddenRender, this);
+      this.on('stopTimer', this.stopTimer, this);
+    },
+    events: {
+      'click #add-hidden': 'onClick',
+      'click #add-input': 'addInput',
+      'click #exec': 'exec'
+    },
+    onClick: function(e){
+      e.stopPropagation();
+
+      var hidden = new FF.Model.MHidden();
+      if (
+        hidden.set({
+          name: $.trim($('#add-hidden-name').val()),
+          val: $.trim($('#add-hidden-value').val())
+        }, { validate: true })
+      ) {
+        this.collection.add(hidden);
+        $('#add-hidden-name').val('');
+        $('#add-hidden-value').val('');
+      }
+    },
+    addInput: function(e){
+      e.stopPropagation();
+
+      var input = new FF.Model.Input();
+      if (
+        input.set({
+          name: $.trim($('#add-input-name').val())
+        }, { validate: true })
+      ) {
+        this.inputCollection.add(input);
+      }
+    },
+    inputRender: function(input){
+      var inputView = new FF.View.InputView({ model: input });
+      this.addInputArea.append(inputView.render().el);
+    },
+    hiddenRender: function(mHidden){
+        var hiddenView = new FF.View.HiddenView({ model: mHidden });
+        this.addHiddenArea.append(hiddenView.render().el);
+    },
+    exec: function(e){
+      e.stopPropagation();
+
+      if (confirm('are you ready?')) {
+        $('#exec').attr('disabled', 'disabled');
+        $("input:radio[name='method-type']").attr('disabled', 'disabled');
+
+        this.timer = this.transmission();
+      }
+    },
+    transmission: function(){
+      var targetForm = $('#target-form'),
+          interval = Math.abs(Math.round(~~$('#interval').val())),
+          _execCnt = Math.abs(Math.round(~~$('#exec-cnt').val()));
+
+      targetForm.attr('action', $('#action-url').val());
+      targetForm.attr('method', $("input:radio[name='method-type']:checked").val());
+
+      return setInterval(function(){
+        this.execCnt++;
+        targetForm.submit();
+
+        if(this.execCnt === _execCnt || this.execCnt === FF.Config.MAX_EXEC_CNT){
+          this.execCnt = 0;
+          this.trigger('stopTimer');
+        }
+
+      }.bind(this), interval);
+    },
+    stopTimer: function(){
+      if (this.timer !== null) {
+          clearInterval(this.timer);
+          this.timer = null;
+
+          $('#exec').removeAttr('disabled');
+          $("input:radio[name='method-type']").removeAttr('disabled', 'disabled');
+      }
+    }
+  });
+})();
+
+// input
+(function() {
+  FF.Model.Input = Backbone.Model.extend({
+    defaults: {
+      name: ''
+    },
+    initialize: function(){
+      this.on('invalid', function(model, error) {
+        alert(error);
+      });
+    },
+    validate: function(attrs){
+      if ( _.isEmpty(attrs.name)) {
+        return 'name must not be empty';
+      }
+    }
+  });
+})();
+
+(function(){
+  FF.Collection.Inputs = Backbone.Collection.extend({
+    model: FF.Model.Input
+  });
+})();
+
+(function() {
+  FF.View.InputView = Backbone.View.extend({
+    className: 'form-group input-file',
+    hiddenTmpl: _.template($('#input-tmpl').html()),
+    initialize: function(){
+      this.model.on('destroy', this.remove, this);
+    },
+    events: {
+      'click .del-input': 'destroy'
+    },
+    destroy: function(e){
+      e.stopPropagation();
+      if (confirm('are you sure?')) {
+        this.model.destroy();
+      }
+    },
+    remove: function(){
+      this.$el.remove();
+    },
+    render: function(){
+      var template = this.hiddenTmpl(this.model.toJSON());
+      this.$el.html(template);
+      return this;
+    }
+  });
+})();
+
+(function() {
+  FF.Model.MHidden = Backbone.Model.extend({
+    defaults: {
+      name: '',
+      val: ''
+    },
+    initialize: function(){
+      this.on('invalid', function(model, error) {
+          alert(error);
+      });
+    },
+    validate: function(attrs){
+      if (_.isEmpty(attrs.name)) {
+        return 'name must not be empty';
+      }
+    }
+  });
+})();
+
+// hidden
+(function(){
+  FF.Collection.MHiddens = Backbone.Collection.extend({
+    model: FF.Model.MHidden
+  });
+})();
+
+(function() {
+  FF.View.HiddenView = Backbone.View.extend({
+    className: 'form-group hidden-view',
+    hiddenTmpl: _.template($('#hidden-tmpl').html()),
+    initialize: function(){
+      this.model.on('destroy', this.remove, this);
+    },
+    events: {
+      'click .del-hidden': 'destroy',
+      'keyup .hidden-val': 'onKeyUp'
+    },
+    destroy: function(e){
+      e.stopPropagation();
+      if (confirm('are you sure?')) {
+        this.model.destroy();
+      }
+    },
+    onKeyUp: function(e){
+      e.stopPropagation();
+      this.$el.find('.target-hidden').val($(e.target).val());
+    },
+    remove: function(){
+      this.$el.remove();
+    },
+    render: function(){
+      var template = this.hiddenTmpl(this.model.toJSON());
+      this.$el.html(template);
+      return this;
+    }
+  });
+})();
+
+</script>
+</body>
+</html>
